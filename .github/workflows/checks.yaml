@@ -1,0 +1,46 @@
+name: Go checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Vet and test
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install GNU make
+        run: choco install make --no-progress -y
+      - name: Vet
+        shell: bash
+        run: make vet
+      - name: Test
+        shell: bash
+        run: make test
+
+  build:
+    name: Build Windows executables
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install GNU make
+        run: choco install make --no-progress -y
+      - name: Build artifacts
+        shell: bash
+        run: make build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bridge-artifacts
+          path: dist/
+          if-no-files-found: error
