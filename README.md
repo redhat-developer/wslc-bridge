@@ -24,13 +24,13 @@ The bridge is an independent executable. It does not require a Windows Docker da
 
 ## Build
 
-The build script produces Windows x64 and ARM64 executables and a SHA-256 manifest. ARM64 is cross-built; validate it on ARM64 Windows hardware before claiming runtime support.
-
-From PowerShell, with Go 1.26 or newer:
+`make build` produces Windows x64 and ARM64 executables and a SHA-256 manifest. ARM64 is cross-built; validate it on ARM64 Windows hardware before claiming runtime support.
 
 ```powershell
-./scripts/build.ps1
+make build
 ```
+
+Requires Go 1.26 or newer and GNU make. On Windows, install make with `choco install make` or `scoop install make`, and run the targets from Git Bash or WSL. `VERSION`, `BUILD_DATE` and `BUILD_ARCH` can be overridden, for example `make build VERSION=1.0.0`.
 
 Artifacts are written to `dist/`:
 
@@ -41,7 +41,16 @@ bridge-manifest.json
 checksums.txt
 ```
 
-The build script pins `github.com/Microsoft/go-winio` at v0.6.3 through `go.mod`/`go.sum`, uses CGO-disabled cross-builds, and embeds version, commit and build-date metadata.
+The build pins `github.com/Microsoft/go-winio` at v0.6.3 through `go.mod`/`go.sum`, uses CGO-disabled cross-builds, and embeds version, commit and build-date metadata.
+
+Available targets:
+
+| Target | Description |
+| --- | --- |
+| `build` | Build the Windows executables, `checksums.txt` and `bridge-manifest.json` |
+| `vet` | Run `go vet` |
+| `test` | Run the unit tests |
+| `clean` | Remove build artifacts |
 
 ## Run
 
@@ -119,14 +128,14 @@ WSLC native inspect supplies the Windows host binding address and allocated port
 Run automated checks on Windows:
 
 ```bash
-go test ./...
-go vet ./...
+make vet
+make test
 ```
 
-Build both Windows architectures:
+Build every artifact:
 
-```powershell
-./scripts/build.ps1
+```bash
+make build
 ```
 
 On Windows, run the real WSLC smoke test after starting the bridge or activating the extension. The test sends Docker HTTP requests directly over the named pipe using PowerShell; it does not require `docker.exe`, `podman.exe`, or a separate container engine:
