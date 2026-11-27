@@ -26,8 +26,11 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
+
+	"wslc-bridge/pkg/native"
 )
 
 const testPipe = `\\.\pipe\wslc_bridge_test`
@@ -165,5 +168,93 @@ func TestServeEmitsReadinessEventProxiesAndStopsCleanly(t *testing.T) {
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("timed out waiting for serve to shut down")
+	}
+}
+
+// execNative is a native.Client whose only supported call is ExecContainer.
+type execNative struct {
+	native.Client
+	started   chan struct{}
+	cancelled chan struct{}
+}
+
+func (e *execNative) ExecContainer(ctx context.Context, _ string, _ []string, _, _ io.Writer) (int, error) {
+	e.started <- struct{}{}
+	<-ctx.Done()
+	e.cancelled <- struct{}{}
+	return -1, ctx.Err()
+}
+
+func TestServeShutdownCancelsAndWaitsForHijackedExecs(t *testing.T) {
+	t.Parallel()
+
+	guestClient := fakeGuestClient(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path == "/version" {
+			return guestResponse(http.StatusOK, `{"ApiVersion":"1.47"}`)(request)
+		}
+		return guestResponse(http.StatusOK, `{"Id":"container-id","State":{"Running":true}}`)(request)
+	})
+	deps := fakeDependencies(t, healthyRunner(), guestClient)
+	exec := &execNative{started: make(chan struct{}, 1), cancelled: make(chan struct{}, 1)}
+	deps.newNativeClient = func(string, string) native.Client { return exec }
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deps.listenPipe = func(string) (net.Listener, error) { return listener, nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- deps.serve(ctx, testPipe) }()
+
+	base := "http://" + listener.Addr().String()
+	var created *http.Response
+	for deadline := time.Now().Add(15 * time.Second); ; {
+		created, err = http.Post(base+"/containers/container-id/exec", "application/json",
+			strings.NewReader(`{"AttachStdout":true,"Cmd":["sleep","60"]}`))
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var creation struct {
+		ID string `json:"Id"`
+	}
+	if err := json.NewDecoder(created.Body).Decode(&creation); err != nil {
+		t.Fatal(err)
+	}
+	_ = created.Body.Close()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte("POST /exec/" + creation.ID + "/start HTTP/1.1\r\nHost: docker\r\nContent-Length: 0\r\n\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-exec.started:
+	case <-time.After(15 * time.Second):
+		t.Fatal("timed out waiting for the exec to start")
+	}
+
+	cancel()
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("serve() = %v, want nil after shutdown", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("timed out waiting for serve to shut down")
+	}
+	select {
+	case <-exec.cancelled:
+	default:
+		t.Fatal("serve returned before the hijacked exec was cancelled")
 	}
 }

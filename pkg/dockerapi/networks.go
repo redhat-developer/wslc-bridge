@@ -43,7 +43,7 @@ type networkCreateRequest struct {
 	} `json:"IPAM"`
 }
 
-func (h *handler) createNetwork(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) createNetwork(w http.ResponseWriter, r *http.Request) {
 	var request networkCreateRequest
 	if err := decodeRequest(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -71,7 +71,7 @@ func (h *handler) createNetwork(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]string{"Id": id, "Warning": ""})
 }
 
-func (h *handler) removeNetwork(w http.ResponseWriter, r *http.Request, path string) {
+func (h *Handler) removeNetwork(w http.ResponseWriter, r *http.Request, path string) {
 	name := strings.TrimPrefix(path, "/networks/")
 	force := r.URL.Query().Get("force") == "1" || strings.EqualFold(r.URL.Query().Get("force"), "true")
 	if err := h.native.RemoveNetwork(r.Context(), name, force); err != nil {

@@ -46,6 +46,7 @@ type fakeNativeRuntime struct {
 	pulled          []string
 	createdNetworks []native.NetworkSpec
 	removedNetworks []string
+	execFunc        func(ctx context.Context, id string, command []string, stdout, stderr io.Writer) (int, error)
 }
 
 var _ native.Client = (*fakeNativeRuntime)(nil)
@@ -79,7 +80,10 @@ func (f *fakeNativeRuntime) PullImage(_ context.Context, reference string) error
 	return nil
 }
 
-func (f *fakeNativeRuntime) ExecContainer(context.Context, string, []string, io.Writer, io.Writer) (int, error) {
+func (f *fakeNativeRuntime) ExecContainer(ctx context.Context, id string, command []string, stdout, stderr io.Writer) (int, error) {
+	if f.execFunc != nil {
+		return f.execFunc(ctx, id, command, stdout, stderr)
+	}
 	return 0, nil
 }
 

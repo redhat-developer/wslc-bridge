@@ -34,7 +34,7 @@ type registryAuth struct {
 	IdentityToken string `json:"identitytoken"`
 }
 
-func (h *handler) pullImage(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) pullImage(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	if query.Get("fromSrc") != "" || query.Get("repo") != "" || query.Get("platform") != "" || query.Get("all") == "1" {
 		writeError(w, http.StatusNotImplemented, "this image pull option is not supported by WSLC v1")

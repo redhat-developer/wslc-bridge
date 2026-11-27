@@ -27,7 +27,7 @@ import (
 	"wslc-bridge/pkg/native"
 )
 
-func (h *handler) containerStart(w http.ResponseWriter, r *http.Request, path string) {
+func (h *Handler) containerStart(w http.ResponseWriter, r *http.Request, path string) {
 	id := strings.TrimSuffix(strings.TrimPrefix(path, "/containers/"), "/start")
 	if err := h.native.StartContainer(r.Context(), id); err != nil {
 		var nativeError *native.Error
@@ -41,7 +41,7 @@ func (h *handler) containerStart(w http.ResponseWriter, r *http.Request, path st
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *handler) containerStop(w http.ResponseWriter, r *http.Request, path string) {
+func (h *Handler) containerStop(w http.ResponseWriter, r *http.Request, path string) {
 	id := strings.TrimSuffix(strings.TrimPrefix(path, "/containers/"), "/stop")
 	query := r.URL.Query()
 	spec := native.StopSpec{ID: id}
@@ -68,7 +68,7 @@ func (h *handler) containerStop(w http.ResponseWriter, r *http.Request, path str
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *handler) containerRemove(w http.ResponseWriter, r *http.Request, path string) {
+func (h *Handler) containerRemove(w http.ResponseWriter, r *http.Request, path string) {
 	id := strings.TrimPrefix(path, "/containers/")
 	query := r.URL.Query()
 	if query.Get("v") == "1" || strings.EqualFold(query.Get("v"), "true") {

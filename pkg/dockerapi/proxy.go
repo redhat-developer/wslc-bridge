@@ -28,7 +28,7 @@ import (
 
 const maxJSONResponseBytes = 32 << 20
 
-func (h *handler) proxy(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 	response, err := h.doGuest(r.Context(), r)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "guest Docker API request failed: "+err.Error())
@@ -47,7 +47,7 @@ func (h *handler) proxy(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(flushWriter{writer: w}, response.Body)
 }
 
-func (h *handler) doGuest(ctx context.Context, request *http.Request) (*http.Response, error) {
+func (h *Handler) doGuest(ctx context.Context, request *http.Request) (*http.Response, error) {
 	upstream, err := http.NewRequestWithContext(ctx, request.Method, "http://docker"+request.URL.RequestURI(), request.Body)
 	if err != nil {
 		return nil, err

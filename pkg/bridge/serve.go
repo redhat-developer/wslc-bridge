@@ -83,8 +83,9 @@ func (d dependencies) serve(ctx context.Context, pipeName string) error {
 		return &ExitError{Code: 5, Message: err.Error(), Err: err}
 	}
 	tracker := newConnectionTracker()
+	api := dockerapi.NewHandler(d.newNativeClient(runtimeInfo.WSLCPath, runtimeInfo.WSLPath), guestClient)
 	server := &http.Server{
-		Handler:           dockerapi.NewHandler(d.newNativeClient(runtimeInfo.WSLCPath, runtimeInfo.WSLPath), guestClient),
+		Handler:           api,
 		ReadHeaderTimeout: 10 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 		ConnState:         tracker.update,
@@ -114,6 +115,11 @@ func (d dependencies) serve(ctx context.Context, pipeName string) error {
 			_ = server.Close()
 		}
 		tracker.closeHijacked()
+		// Hijacked exec streams are no longer tracked by the server: cancel
+		// them and wait for their wslc.exe processes to end.
+		execCtx, execCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer execCancel()
+		_ = api.Shutdown(execCtx)
 		_ = server.Close()
 		select {
 		case <-serveResult:

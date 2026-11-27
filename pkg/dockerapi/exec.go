@@ -19,6 +19,7 @@
 package dockerapi
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -46,7 +47,7 @@ type execStartRequest struct {
 	Tty    bool `json:"Tty"`
 }
 
-func (h *handler) createExec(w http.ResponseWriter, r *http.Request, path string) {
+func (h *Handler) createExec(w http.ResponseWriter, r *http.Request, path string) {
 	containerID := strings.TrimSuffix(strings.TrimPrefix(path, "/containers/"), "/exec")
 	var request execCreateRequest
 	if err := decodeRequest(r, &request); err != nil {
@@ -82,7 +83,7 @@ func (h *handler) createExec(w http.ResponseWriter, r *http.Request, path string
 	writeJSON(w, http.StatusCreated, map[string]string{"Id": record.ID})
 }
 
-func (h *handler) startExec(w http.ResponseWriter, r *http.Request, path string) {
+func (h *Handler) startExec(w http.ResponseWriter, r *http.Request, path string) {
 	id := execIDFromPath(path, "start")
 	record, ok := h.execs.Get(id)
 	if !ok {
@@ -100,6 +101,11 @@ func (h *handler) startExec(w http.ResponseWriter, r *http.Request, path string)
 		writeError(w, http.StatusNotImplemented, "detached and TTY exec are not supported")
 		return
 	}
+	if !h.beginExec() {
+		writeError(w, http.StatusServiceUnavailable, "bridge is shutting down")
+		return
+	}
+	defer h.running.Done()
 	record, err := h.execs.Start(id)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
@@ -128,7 +134,16 @@ func (h *handler) startExec(w http.ResponseWriter, r *http.Request, path string)
 	stream := &dockerStreamWriter{writer: connection}
 	stdout := io.Writer(streamForType(stream, 1))
 	stderr := io.Writer(streamForType(stream, 2))
-	exitCode, runErr := h.native.ExecContainer(r.Context(), record.ContainerID, record.Cmd, stdout, stderr)
+	// A hijacked connection no longer cancels r.Context(), so the exec is
+	// cancelled explicitly when the client side closes or the bridge shuts
+	// down. Exec is non-interactive, so nothing is expected on the read side.
+	execCtx, cancel := context.WithCancel(h.execCtx)
+	defer cancel()
+	go func() {
+		_, _ = io.Copy(io.Discard, buffered.Reader)
+		cancel()
+	}()
+	exitCode, runErr := h.native.ExecContainer(execCtx, record.ContainerID, record.Cmd, stdout, stderr)
 	if runErr != nil {
 		var processCommandError *process.CommandError
 		if !errors.As(runErr, &processCommandError) || processCommandError.ExitCode < 0 {
@@ -144,7 +159,7 @@ func (h *handler) startExec(w http.ResponseWriter, r *http.Request, path string)
 	_, _ = h.execs.Complete(id, exitCode)
 }
 
-func (h *handler) inspectExec(w http.ResponseWriter, _ *http.Request, path string) {
+func (h *Handler) inspectExec(w http.ResponseWriter, _ *http.Request, path string) {
 	id := execIDFromPath(path, "json")
 	record, ok := h.execs.Get(id)
 	if !ok {

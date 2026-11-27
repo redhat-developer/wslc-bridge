@@ -31,7 +31,7 @@ import (
 	"wslc-bridge/pkg/native"
 )
 
-func (h *handler) createContainer(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) createContainer(w http.ResponseWriter, r *http.Request) {
 	var request dockerCreateRequest
 	if err := decodeRequest(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

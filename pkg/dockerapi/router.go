@@ -19,9 +19,11 @@
 package dockerapi
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"wslc-bridge/pkg/execstore"
 	"wslc-bridge/pkg/native"
@@ -33,19 +35,65 @@ type guestAPI interface {
 	Do(request *http.Request) (*http.Response, error)
 }
 
-type handler struct {
+// Handler serves the Docker API. It also owns the hijacked exec streams,
+// which net/http stops tracking once a connection is hijacked: Shutdown
+// cancels them and waits for them to finish.
+type Handler struct {
 	native native.Client
 	guest  guestAPI
 	execs  *execstore.Store
+
+	execCtx    context.Context
+	cancelExec context.CancelFunc
+
+	mu      sync.Mutex
+	closed  bool
+	running sync.WaitGroup
 }
 
 // NewHandler returns the Docker API HTTP handler backed by the native WSLC
 // client and the guest Docker API client.
-func NewHandler(nativeClient native.Client, guestClient guestAPI) http.Handler {
-	return &handler{native: nativeClient, guest: guestClient, execs: execstore.NewStore()}
+func NewHandler(nativeClient native.Client, guestClient guestAPI) *Handler {
+	execCtx, cancelExec := context.WithCancel(context.Background())
+	return &Handler{
+		native: nativeClient, guest: guestClient, execs: execstore.NewStore(),
+		execCtx: execCtx, cancelExec: cancelExec,
+	}
 }
 
-func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// beginExec registers a running exec stream. It reports false once Shutdown
+// has begun.
+func (h *Handler) beginExec() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		return false
+	}
+	h.running.Add(1)
+	return true
+}
+
+// Shutdown rejects new exec streams, cancels the running ones and waits for
+// them to finish or for ctx to end. It is safe to call more than once.
+func (h *Handler) Shutdown(ctx context.Context) error {
+	h.mu.Lock()
+	h.closed = true
+	h.mu.Unlock()
+	h.cancelExec()
+	done := make(chan struct{})
+	go func() {
+		h.running.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	apiPath, err := stripVersionPrefix(r.URL.Path)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -161,4 +209,4 @@ func execIDFromPath(path, suffix string) string {
 	return strings.TrimSuffix(strings.TrimPrefix(path, "/exec/"), "/"+suffix)
 }
 
-var _ http.Handler = (*handler)(nil)
+var _ http.Handler = (*Handler)(nil)

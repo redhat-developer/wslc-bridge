@@ -37,7 +37,7 @@ type guestContainerSummary struct {
 	State string `json:"State"`
 }
 
-func (h *handler) listContainers(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) listContainers(w http.ResponseWriter, r *http.Request) {
 	response, err := h.doGuest(r.Context(), r)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "guest Docker API request failed: "+err.Error())
@@ -96,7 +96,7 @@ func (h *handler) listContainers(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, bytes.NewReader(transformed))
 }
 
-func (h *handler) inspectContainer(w http.ResponseWriter, r *http.Request, path string) {
+func (h *Handler) inspectContainer(w http.ResponseWriter, r *http.Request, path string) {
 	id := strings.TrimSuffix(strings.TrimPrefix(path, "/containers/"), "/json")
 	if id == "" || strings.Contains(id, "/") {
 		writeError(w, http.StatusBadRequest, "container ID is required")
@@ -141,7 +141,7 @@ func (h *handler) inspectContainer(w http.ResponseWriter, r *http.Request, path 
 	_, _ = io.Copy(w, bytes.NewReader(transformed))
 }
 
-func (h *handler) guestContainerRunning(r *http.Request, id string) (bool, int, error) {
+func (h *Handler) guestContainerRunning(r *http.Request, id string) (bool, int, error) {
 	inspectURL := "http://docker/containers/" + url.PathEscape(id) + "/json"
 	inspectRequest, err := http.NewRequestWithContext(r.Context(), http.MethodGet, inspectURL, nil)
 	if err != nil {
